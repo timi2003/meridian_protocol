@@ -5,35 +5,42 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ArrowLeft, Check, ExternalLink, Loader2 } from "lucide-react"
+import { ArrowLeft, Check, Loader2 } from "lucide-react"
 import { useProtocolStore } from "@/lib/store"
 
-type DepositStep = "input" | "approve" | "deposit" | "waiting" | "success"
+type DepositStep = "input" | "depositing" | "success"
 
 export function DepositModal() {
-  const { setCurrentView } = useProtocolStore()
+  const { setCurrentView, solanaBalance, evmBalance, addCollateral } = useProtocolStore()
   const [amount, setAmount] = useState("")
   const [currentStep, setCurrentStep] = useState<DepositStep>("input")
-  const [txHash, setTxHash] = useState("")
+  const [selectedAsset, setSelectedAsset] = useState<"SOL" | "ETH">("SOL")
 
-  const balance = 15.5 // Mock WETH balance
+  const balance = selectedAsset === "SOL" ? solanaBalance : evmBalance
   const isValidAmount = Number.parseFloat(amount) > 0 && Number.parseFloat(amount) <= balance
 
-  const handleApprove = async () => {
-    setCurrentStep("approve")
-    // Simulate approval transaction
-    setTimeout(() => {
-      setTxHash("0x1234...5678")
-      setCurrentStep("deposit")
-    }, 2000)
-  }
-
   const handleDeposit = async () => {
-    setCurrentStep("waiting")
-    // Simulate deposit and cross-chain confirmation
+    if (!isValidAmount) return
+
+    setCurrentStep("depositing")
+
+    // Simulate deposit transaction
     setTimeout(() => {
+      const depositAmount = Number.parseFloat(amount)
+      const assetPrice = selectedAsset === "SOL" ? 100 : 3000 // Mock prices
+      const value = depositAmount * assetPrice
+
+      addCollateral({
+        symbol: selectedAsset,
+        name: selectedAsset === "SOL" ? "Solana" : "Ethereum",
+        chain: selectedAsset === "SOL" ? "Solana" : "Ethereum",
+        amount: depositAmount,
+        value: value,
+        icon: selectedAsset === "SOL" ? "S" : "E",
+      })
+
       setCurrentStep("success")
-    }, 5000)
+    }, 2000)
   }
 
   const handleComplete = () => {
@@ -59,30 +66,65 @@ export function DepositModal() {
         <Card className="bg-slate-900 border-slate-700">
           <CardHeader>
             <CardTitle className="text-2xl text-white">Deposit Collateral</CardTitle>
-            <p className="text-slate-400">Add WETH collateral from Sepolia to increase your borrowing power</p>
+            <p className="text-slate-400">Add assets from your wallet as collateral to increase borrowing power</p>
           </CardHeader>
 
           <CardContent className="space-y-6">
             {currentStep === "input" && (
               <>
                 <div className="space-y-4">
+                  {/* Asset Selection */}
                   <div className="space-y-2">
-                    <Label className="text-white">Asset</Label>
-                    <div className="flex items-center gap-3 p-3 bg-slate-800 rounded-lg">
-                      <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
-                        <span className="text-white text-sm font-bold">W</span>
-                      </div>
-                      <div>
-                        <div className="text-white font-medium">Wrapped ETH</div>
-                        <div className="text-slate-400 text-sm">Sepolia Testnet</div>
-                      </div>
+                    <Label className="text-white">Select Asset</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Button
+                        variant={selectedAsset === "SOL" ? "default" : "outline"}
+                        onClick={() => setSelectedAsset("SOL")}
+                        className={`p-4 h-auto ${
+                          selectedAsset === "SOL"
+                            ? "bg-blue-500 hover:bg-blue-600"
+                            : "border-slate-600 hover:bg-slate-800 bg-transparent"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm font-bold">S</span>
+                          </div>
+                          <div className="text-left">
+                            <div className="font-medium">Solana</div>
+                            <div className="text-sm opacity-70">SOL</div>
+                          </div>
+                        </div>
+                      </Button>
+
+                      <Button
+                        variant={selectedAsset === "ETH" ? "default" : "outline"}
+                        onClick={() => setSelectedAsset("ETH")}
+                        className={`p-4 h-auto ${
+                          selectedAsset === "ETH"
+                            ? "bg-blue-500 hover:bg-blue-600"
+                            : "border-slate-600 hover:bg-slate-800 bg-transparent"
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                            <span className="text-white text-sm font-bold">E</span>
+                          </div>
+                          <div className="text-left">
+                            <div className="font-medium">Ethereum</div>
+                            <div className="text-sm opacity-70">ETH</div>
+                          </div>
+                        </div>
+                      </Button>
                     </div>
                   </div>
 
                   <div className="space-y-2">
                     <div className="flex justify-between">
                       <Label className="text-white">Amount</Label>
-                      <span className="text-slate-400 text-sm">Balance: {balance} WETH</span>
+                      <span className="text-slate-400 text-sm">
+                        Balance: {balance.toFixed(4)} {selectedAsset}
+                      </span>
                     </div>
                     <Input
                       type="number"
@@ -95,7 +137,7 @@ export function DepositModal() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setAmount((balance * 0.25).toString())}
+                        onClick={() => setAmount((balance * 0.25).toFixed(4))}
                         className="border-slate-600 text-slate-300"
                       >
                         25%
@@ -103,7 +145,7 @@ export function DepositModal() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setAmount((balance * 0.5).toString())}
+                        onClick={() => setAmount((balance * 0.5).toFixed(4))}
                         className="border-slate-600 text-slate-300"
                       >
                         50%
@@ -111,7 +153,7 @@ export function DepositModal() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setAmount((balance * 0.75).toString())}
+                        onClick={() => setAmount((balance * 0.75).toFixed(4))}
                         className="border-slate-600 text-slate-300"
                       >
                         75%
@@ -119,88 +161,64 @@ export function DepositModal() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setAmount(balance.toString())}
+                        onClick={() => setAmount(balance.toFixed(4))}
                         className="border-slate-600 text-slate-300"
                       >
                         MAX
                       </Button>
                     </div>
                   </div>
+
+                  {/* Deposit Preview */}
+                  {isValidAmount && (
+                    <div className="p-4 bg-slate-800 rounded-lg">
+                      <h3 className="text-white font-medium mb-2">Deposit Preview</h3>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Amount</span>
+                          <span className="text-white">
+                            {amount} {selectedAsset}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Estimated Value</span>
+                          <span className="text-white">
+                            ${(Number.parseFloat(amount) * (selectedAsset === "SOL" ? 100 : 3000)).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <Button
-                  onClick={handleApprove}
+                  onClick={handleDeposit}
                   disabled={!isValidAmount}
                   className="w-full bg-blue-500 hover:bg-blue-600 disabled:bg-slate-700"
                 >
-                  Approve WETH
+                  Deposit {amount || "0"} {selectedAsset}
                 </Button>
               </>
             )}
 
-            {currentStep === "approve" && (
-              <div className="text-center space-y-4">
+            {currentStep === "depositing" && (
+              <div className="text-center space-y-4 py-8">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mx-auto" />
                 <div>
-                  <h3 className="text-white font-medium">Approving WETH...</h3>
-                  <p className="text-slate-400 text-sm">Confirm the transaction in MetaMask</p>
-                </div>
-              </div>
-            )}
-
-            {currentStep === "deposit" && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 text-green-500">
-                  <Check className="h-5 w-5" />
-                  <span>WETH approved successfully</span>
-                </div>
-                <Button onClick={handleDeposit} className="w-full bg-blue-500 hover:bg-blue-600">
-                  Deposit {amount} WETH
-                </Button>
-              </div>
-            )}
-
-            {currentStep === "waiting" && (
-              <div className="space-y-6">
-                <h3 className="text-white font-medium text-center">Processing Cross-Chain Deposit</h3>
-
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <Check className="h-5 w-5 text-green-500" />
-                    <div className="flex-1">
-                      <div className="text-white">Transaction confirmed on Sepolia</div>
-                      <a href="#" className="text-blue-400 text-sm hover:underline flex items-center gap-1">
-                        View on Etherscan <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-                    <div className="flex-1">
-                      <div className="text-white">Relaying message via LayerZero</div>
-                      <a href="#" className="text-blue-400 text-sm hover:underline flex items-center gap-1">
-                        View on LayerZero Scan <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <div className="h-5 w-5 border-2 border-slate-600 rounded-full" />
-                    <div className="text-slate-400">Awaiting credit on Solana</div>
-                  </div>
+                  <h3 className="text-white font-medium">Processing Deposit...</h3>
+                  <p className="text-slate-400 text-sm">Confirming transaction on the blockchain</p>
                 </div>
               </div>
             )}
 
             {currentStep === "success" && (
-              <div className="text-center space-y-4">
+              <div className="text-center space-y-4 py-8">
                 <div className="w-16 h-16 bg-green-500/20 rounded-full flex items-center justify-center mx-auto">
                   <Check className="h-8 w-8 text-green-500" />
                 </div>
                 <div>
                   <h3 className="text-white font-medium text-lg">Deposit Successful!</h3>
-                  <p className="text-slate-400">Your collateral has been credited and is now available for borrowing</p>
+                  <p className="text-slate-400">Your collateral has been added and is now available for borrowing</p>
                 </div>
                 <Button onClick={handleComplete} className="w-full bg-blue-500 hover:bg-blue-600">
                   Return to Dashboard

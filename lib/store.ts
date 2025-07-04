@@ -1,13 +1,15 @@
 "use client"
 
 import React from "react"
-
 import { useState } from "react"
+import type { PublicKey } from "@solana/web3.js"
 
 interface WalletState {
   solanaWallet: string | null
   evmWallet: string | null
   isWalletConnected: boolean
+  solanaBalance: number
+  evmBalance: number
 }
 
 interface UserState {
@@ -18,6 +20,14 @@ interface UserState {
   totalCollateral: number
   totalDebt: number
   netValue: number
+  collateralAssets: Array<{
+    symbol: string
+    name: string
+    chain: string
+    amount: number
+    value: number
+    icon: string
+  }>
 }
 
 interface UIState {
@@ -30,15 +40,25 @@ const globalState = {
   solanaWallet: null as string | null,
   evmWallet: null as string | null,
   isWalletConnected: false,
+  solanaBalance: 0,
+  evmBalance: 0,
   hasUserProfile: false,
   trustScore: 750,
   tier: "GOLD" as const,
   healthFactor: 2.5,
-  totalCollateral: 30000,
+  totalCollateral: 0,
   totalDebt: 5000,
-  netValue: 25000,
+  netValue: 0,
   currentView: "dashboard" as const,
   isLoading: false,
+  collateralAssets: [] as Array<{
+    symbol: string
+    name: string
+    chain: string
+    amount: number
+    value: number
+    icon: string
+  }>,
 }
 
 // Store update listeners
@@ -66,18 +86,21 @@ export function useProtocolStore() {
 
   return {
     ...state,
-    connectSolanaWallet: () => {
+    connectSolanaWallet: (publicKey: PublicKey, balance: number) => {
+      const walletAddress = publicKey.toString()
       const updates: Partial<typeof globalState> = {
-        solanaWallet: "7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU",
+        solanaWallet: walletAddress,
+        solanaBalance: balance,
       }
       if (globalState.evmWallet) {
         updates.isWalletConnected = true
       }
       updateState(updates)
     },
-    connectEvmWallet: () => {
+    connectEvmWallet: (address: string, balance: number) => {
       const updates: Partial<typeof globalState> = {
-        evmWallet: "0x742d35Cc6634C0532925a3b8D4C9db96590b5c8e",
+        evmWallet: address,
+        evmBalance: balance,
       }
       if (globalState.solanaWallet) {
         updates.isWalletConnected = true
@@ -92,6 +115,30 @@ export function useProtocolStore() {
     },
     setLoading: (loading: boolean) => {
       updateState({ isLoading: loading })
+    },
+    addCollateral: (asset: {
+      symbol: string
+      name: string
+      chain: string
+      amount: number
+      value: number
+      icon: string
+    }) => {
+      const newAssets = [...globalState.collateralAssets, asset]
+      const newTotalCollateral = newAssets.reduce((sum, asset) => sum + asset.value, 0)
+      updateState({
+        collateralAssets: newAssets,
+        totalCollateral: newTotalCollateral,
+        netValue: newTotalCollateral - globalState.totalDebt,
+        healthFactor: newTotalCollateral > 0 ? newTotalCollateral / (globalState.totalDebt * 1.25) : 0,
+      })
+    },
+    updateBalances: (solanaBalance: number, evmBalance?: number) => {
+      const updates: Partial<typeof globalState> = { solanaBalance }
+      if (evmBalance !== undefined) {
+        updates.evmBalance = evmBalance
+      }
+      updateState(updates)
     },
   }
 }

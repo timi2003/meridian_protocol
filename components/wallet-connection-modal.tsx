@@ -2,8 +2,13 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Check, Wallet } from "lucide-react"
+import { Check, Wallet, Loader2 } from "lucide-react"
 import { useProtocolStore } from "@/lib/store"
+import { useWallet, useConnection } from "@solana/wallet-adapter-react"
+import { useWalletModal } from "@solana/wallet-adapter-react-ui"
+import { useEffect, useState } from "react"
+import { LAMPORTS_PER_SOL } from "@solana/web3.js"
+// import { globalState } from "@/lib/globalState" // Declare or import globalState
 
 interface WalletConnectionModalProps {
   open: boolean
@@ -11,13 +16,94 @@ interface WalletConnectionModalProps {
 }
 
 export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionModalProps) {
-  const { solanaWallet, evmWallet, connectSolanaWallet, connectEvmWallet } = useProtocolStore()
+  const { solanaWallet, evmWallet, solanaBalance, evmBalance, connectSolanaWallet, connectEvmWallet, updateBalances } =
+    useProtocolStore()
+  const { publicKey, connected, connecting, wallet } = useWallet()
+  const { connection } = useConnection()
+  const { setVisible } = useWalletModal()
+  const [loadingSolana, setLoadingSolana] = useState(false)
+  const [loadingEvm, setLoadingEvm] = useState(false)
 
   const bothConnected = solanaWallet && evmWallet
 
+  // Handle Solana wallet connection
+  useEffect(() => {
+    if (connected && publicKey && !solanaWallet) {
+      setLoadingSolana(true)
+      // Fetch SOL balance
+      connection
+        .getBalance(publicKey)
+        .then((balance) => {
+          const solBalance = balance / LAMPORTS_PER_SOL
+          connectSolanaWallet(publicKey, solBalance)
+          setLoadingSolana(false)
+        })
+        .catch((error) => {
+          console.error("Error fetching SOL balance:", error)
+          connectSolanaWallet(publicKey, 0)
+          setLoadingSolana(false)
+        })
+    }
+  }, [connected, publicKey, connection, connectSolanaWallet, solanaWallet])
+
+  // Periodically update balances
+  useEffect(() => {
+    if (connected && publicKey) {
+      const interval = setInterval(() => {
+        connection
+          .getBalance(publicKey)
+          .then((balance) => {
+            const solBalance = balance / LAMPORTS_PER_SOL
+            updateBalances(solBalance)
+          })
+          .catch(console.error)
+      }, 10000) // Update every 10 seconds
+
+      return () => clearInterval(interval)
+    }
+  }, [connected, publicKey, connection, updateBalances])
+
+  const handleConnectSolana = () => {
+    setVisible(true)
+  }
+
+  const handleConnectEvm = async () => {
+    setLoadingEvm(true)
+    try {
+      // Check if MetaMask is installed
+      if (typeof window.ethereum !== "undefined") {
+        // Request account access
+        const accounts = await window.ethereum.request({
+          method: "eth_requestAccounts",
+        })
+
+        if (accounts.length > 0) {
+          const address = accounts[0]
+
+          // Get ETH balance
+          const balance = await window.ethereum.request({
+            method: "eth_getBalance",
+            params: [address, "latest"],
+          })
+
+          // Convert from wei to ETH
+          const ethBalance = Number.parseInt(balance, 16) / Math.pow(10, 18)
+
+          connectEvmWallet(address, ethBalance)
+        }
+      } else {
+        alert("MetaMask is not installed. Please install MetaMask to continue.")
+      }
+    } catch (error) {
+      console.error("Error connecting to MetaMask:", error)
+      alert("Failed to connect to MetaMask. Please try again.")
+    } finally {
+      setLoadingEvm(false)
+    }
+  }
+
   const handleEnterProtocol = () => {
     onOpenChange(false)
-    // This will trigger the user profile check in the main component
   }
 
   return (
@@ -36,30 +122,40 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
             </div>
 
             {solanaWallet ? (
-              <div className="bg-slate-800 p-3 rounded-lg">
+              <div className="bg-slate-800 p-3 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  {wallet?.adapter.icon && (
+                    <img
+                      src={wallet.adapter.icon || "/placeholder.svg"}
+                      alt={wallet.adapter.name}
+                      className="w-5 h-5"
+                    />
+                  )}
+                  <span className="text-sm font-medium">{wallet?.adapter.name}</span>
+                </div>
                 <p className="text-sm text-slate-300 font-mono">
                   {solanaWallet.slice(0, 8)}...{solanaWallet.slice(-8)}
                 </p>
+                <p className="text-xs text-slate-400">Balance: {solanaBalance.toFixed(4)} SOL</p>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <Button
-                  onClick={connectSolanaWallet}
-                  variant="outline"
-                  className="flex-1 border-slate-600 hover:bg-slate-800 bg-transparent"
-                >
-                  <Wallet className="h-4 w-4 mr-2" />
-                  Phantom
-                </Button>
-                <Button
-                  onClick={connectSolanaWallet}
-                  variant="outline"
-                  className="flex-1 border-slate-600 hover:bg-slate-800 bg-transparent"
-                >
-                  <Wallet className="h-4 w-4 mr-2" />
-                  Solflare
-                </Button>
-              </div>
+              <Button
+                onClick={handleConnectSolana}
+                disabled={connecting || loadingSolana}
+                className="w-full border-slate-600 hover:bg-slate-800 bg-transparent border"
+              >
+                {connecting || loadingSolana ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="h-4 w-4 mr-2" />
+                    Connect Solana Wallet
+                  </>
+                )}
+              </Button>
             )}
           </div>
 
@@ -71,19 +167,35 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
             </div>
 
             {evmWallet ? (
-              <div className="bg-slate-800 p-3 rounded-lg">
+              <div className="bg-slate-800 p-3 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 bg-orange-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs font-bold">M</span>
+                  </div>
+                  <span className="text-sm font-medium">MetaMask</span>
+                </div>
                 <p className="text-sm text-slate-300 font-mono">
                   {evmWallet.slice(0, 8)}...{evmWallet.slice(-8)}
                 </p>
+                <p className="text-xs text-slate-400">Balance: {evmBalance.toFixed(4)} ETH</p>
               </div>
             ) : (
               <Button
-                onClick={connectEvmWallet}
-                variant="outline"
-                className="w-full border-slate-600 hover:bg-slate-800 bg-transparent"
+                onClick={handleConnectEvm}
+                disabled={loadingEvm}
+                className="w-full border-slate-600 hover:bg-slate-800 bg-transparent border"
               >
-                <Wallet className="h-4 w-4 mr-2" />
-                MetaMask
+                {loadingEvm ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Connecting...
+                  </>
+                ) : (
+                  <>
+                    <Wallet className="h-4 w-4 mr-2" />
+                    Connect MetaMask
+                  </>
+                )}
               </Button>
             )}
           </div>

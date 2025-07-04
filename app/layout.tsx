@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
+import { SolanaWalletProvider } from "@/components/wallet-provider"
 import "./globals.css"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -8,7 +9,6 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "MeridianProtocol - Next-Gen DeFi",
   description: "Professional omni-chain financial infrastructure",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -19,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={inter.className}>
-        <div className="min-h-screen bg-slate-950">{children}</div>
+        <SolanaWalletProvider>
+          <div className="min-h-screen bg-slate-950">{children}</div>
+        </SolanaWalletProvider>
       </body>
     </html>
   )
