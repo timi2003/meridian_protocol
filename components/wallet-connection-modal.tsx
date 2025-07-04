@@ -2,13 +2,12 @@
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Check, Wallet, Loader2 } from "lucide-react"
+import { Check, Loader2 } from "lucide-react"
 import { useProtocolStore } from "@/lib/store"
 import { useWallet, useConnection } from "@solana/wallet-adapter-react"
-import { useWalletModal } from "@solana/wallet-adapter-react-ui"
 import { useEffect, useState } from "react"
 import { LAMPORTS_PER_SOL } from "@solana/web3.js"
-// import { globalState } from "@/lib/globalState" // Declare or import globalState
+import { PhantomWalletName, SolflareWalletName } from "@solana/wallet-adapter-wallets"
 
 interface WalletConnectionModalProps {
   open: boolean
@@ -18,11 +17,11 @@ interface WalletConnectionModalProps {
 export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionModalProps) {
   const { solanaWallet, evmWallet, solanaBalance, evmBalance, connectSolanaWallet, connectEvmWallet, updateBalances } =
     useProtocolStore()
-  const { publicKey, connected, connecting, wallet } = useWallet()
+  const { publicKey, connected, connecting, wallet, select, connect, disconnect } = useWallet()
   const { connection } = useConnection()
-  const { setVisible } = useWalletModal()
   const [loadingSolana, setLoadingSolana] = useState(false)
   const [loadingEvm, setLoadingEvm] = useState(false)
+  const [selectedSolanaWallet, setSelectedSolanaWallet] = useState<string | null>(null)
 
   const bothConnected = solanaWallet && evmWallet
 
@@ -63,16 +62,72 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
     }
   }, [connected, publicKey, connection, updateBalances])
 
-  const handleConnectSolana = () => {
-    setVisible(true)
+  const handleConnectPhantom = async () => {
+    try {
+      setLoadingSolana(true)
+      setSelectedSolanaWallet("Phantom")
+
+      // Disconnect any existing wallet first
+      if (connected) {
+        await disconnect()
+      }
+
+      // Select Phantom wallet
+      select(PhantomWalletName)
+
+      // Wait a bit for wallet selection to process
+      setTimeout(async () => {
+        try {
+          await connect()
+        } catch (error) {
+          console.error("Error connecting to Phantom:", error)
+          setLoadingSolana(false)
+          alert("Failed to connect to Phantom wallet. Please make sure Phantom is installed and try again.")
+        }
+      }, 500)
+    } catch (error) {
+      console.error("Error selecting Phantom wallet:", error)
+      setLoadingSolana(false)
+      alert("Failed to connect to Phantom wallet. Please make sure Phantom is installed and try again.")
+    }
   }
 
-  const handleConnectEvm = async () => {
+  const handleConnectSolflare = async () => {
+    try {
+      setLoadingSolana(true)
+      setSelectedSolanaWallet("Solflare")
+
+      // Disconnect any existing wallet first
+      if (connected) {
+        await disconnect()
+      }
+
+      // Select Solflare wallet
+      select(SolflareWalletName)
+
+      // Wait a bit for wallet selection to process
+      setTimeout(async () => {
+        try {
+          await connect()
+        } catch (error) {
+          console.error("Error connecting to Solflare:", error)
+          setLoadingSolana(false)
+          alert("Failed to connect to Solflare wallet. Please make sure Solflare is installed and try again.")
+        }
+      }, 500)
+    } catch (error) {
+      console.error("Error selecting Solflare wallet:", error)
+      setLoadingSolana(false)
+      alert("Failed to connect to Solflare wallet. Please make sure Solflare is installed and try again.")
+    }
+  }
+
+  const handleConnectMetaMask = async () => {
     setLoadingEvm(true)
     try {
       // Check if MetaMask is installed
-      if (typeof window.ethereum !== "undefined") {
-        // Request account access
+      if (typeof window.ethereum !== "undefined" && window.ethereum.isMetaMask) {
+        // Request account access from MetaMask
         const accounts = await window.ethereum.request({
           method: "eth_requestAccounts",
         })
@@ -80,7 +135,7 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
         if (accounts.length > 0) {
           const address = accounts[0]
 
-          // Get ETH balance
+          // Get ETH balance from MetaMask
           const balance = await window.ethereum.request({
             method: "eth_getBalance",
             params: [address, "latest"],
@@ -90,13 +145,24 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
           const ethBalance = Number.parseInt(balance, 16) / Math.pow(10, 18)
 
           connectEvmWallet(address, ethBalance)
+        } else {
+          alert("No accounts found in MetaMask. Please make sure you have accounts set up.")
         }
       } else {
-        alert("MetaMask is not installed. Please install MetaMask to continue.")
+        alert("MetaMask is not installed or not detected. Please install MetaMask extension and try again.")
+        // Open MetaMask installation page
+        window.open("https://metamask.io/download/", "_blank")
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error connecting to MetaMask:", error)
-      alert("Failed to connect to MetaMask. Please try again.")
+
+      if (error.code === 4001) {
+        alert("Connection rejected by user. Please approve the connection in MetaMask to continue.")
+      } else if (error.code === -32002) {
+        alert("Connection request is already pending. Please check MetaMask and approve the connection.")
+      } else {
+        alert("Failed to connect to MetaMask. Please make sure MetaMask is unlocked and try again.")
+      }
     } finally {
       setLoadingEvm(false)
     }
@@ -111,6 +177,7 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
       <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
         <DialogHeader>
           <DialogTitle className="text-xl font-semibold">Connect Your Wallets</DialogTitle>
+          <p className="text-slate-400 text-sm">Connect both Solana and Ethereum wallets to access the protocol</p>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
@@ -139,30 +206,53 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
                 <p className="text-xs text-slate-400">Balance: {solanaBalance.toFixed(4)} SOL</p>
               </div>
             ) : (
-              <Button
-                onClick={handleConnectSolana}
-                disabled={connecting || loadingSolana}
-                className="w-full border-slate-600 hover:bg-slate-800 bg-transparent border"
-              >
-                {connecting || loadingSolana ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Connecting...
-                  </>
-                ) : (
-                  <>
-                    <Wallet className="h-4 w-4 mr-2" />
-                    Connect Solana Wallet
-                  </>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleConnectPhantom}
+                  disabled={connecting || loadingSolana}
+                  className="flex-1 border-slate-600 hover:bg-slate-800 bg-transparent border"
+                >
+                  {connecting || (loadingSolana && selectedSolanaWallet === "Phantom") ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-4 h-4 mr-2 bg-purple-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">P</span>
+                      </div>
+                      Phantom
+                    </>
+                  )}
+                </Button>
+                <Button
+                  onClick={handleConnectSolflare}
+                  disabled={connecting || loadingSolana}
+                  className="flex-1 border-slate-600 hover:bg-slate-800 bg-transparent border"
+                >
+                  {connecting || (loadingSolana && selectedSolanaWallet === "Solflare") ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Connecting...
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-4 h-4 mr-2 bg-orange-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">S</span>
+                      </div>
+                      Solflare
+                    </>
+                  )}
+                </Button>
+              </div>
             )}
           </div>
 
           {/* EVM Wallet */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">EVM Wallet</h3>
+              <h3 className="font-medium">Ethereum Wallet</h3>
               {evmWallet && <Check className="h-5 w-5 text-green-500" />}
             </div>
 
@@ -181,24 +271,39 @@ export function WalletConnectionModal({ open, onOpenChange }: WalletConnectionMo
               </div>
             ) : (
               <Button
-                onClick={handleConnectEvm}
+                onClick={handleConnectMetaMask}
                 disabled={loadingEvm}
                 className="w-full border-slate-600 hover:bg-slate-800 bg-transparent border"
               >
                 {loadingEvm ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Connecting...
+                    Connecting to MetaMask...
                   </>
                 ) : (
                   <>
-                    <Wallet className="h-4 w-4 mr-2" />
+                    <div className="w-4 h-4 mr-2 bg-orange-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">M</span>
+                    </div>
                     Connect MetaMask
                   </>
                 )}
               </Button>
             )}
           </div>
+
+          {/* Connection Status */}
+          {!bothConnected && (
+            <div className="text-center p-3 bg-slate-800 rounded-lg">
+              <p className="text-slate-400 text-sm">
+                {!solanaWallet && !evmWallet
+                  ? "Connect both wallets to access the protocol"
+                  : !solanaWallet
+                    ? "Please connect your Solana wallet"
+                    : "Please connect your Ethereum wallet"}
+              </p>
+            </div>
+          )}
 
           {/* Enter Protocol Button */}
           <Button
